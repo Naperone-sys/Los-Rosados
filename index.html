@@ -389,6 +389,48 @@
     width:100%; font-family:var(--font-mono); font-size:11.5px; color:var(--muted);
   }
 
+  /* ---------------- ROSTER ---------------- */
+  #rosterPage{ flex-direction:column; overflow-y:auto; }
+  .roster-wrap{ max-width:820px; margin:0 auto; width:100%; padding:28px 32px 60px; }
+  .roster-head{
+    display:flex; align-items:center; justify-content:space-between;
+    margin-bottom:20px; gap:12px;
+  }
+  .roster-head h2{
+    font-family:var(--font-display); font-size:22px; letter-spacing:1px; text-transform:uppercase;
+  }
+  .roster-head-actions{ display:flex; gap:8px; }
+  .roster-table-wrap{ border:1px solid var(--line); background:var(--panel); }
+  .roster-table{ width:100%; border-collapse:collapse; }
+  .roster-table th{
+    text-align:left; font-family:var(--font-mono); font-size:10.5px; letter-spacing:1.5px;
+    text-transform:uppercase; color:var(--muted); padding:12px 16px; border-bottom:1px solid var(--line);
+  }
+  .roster-table th.rt-drag-col{ padding:12px 0 12px 14px; width:28px; }
+  .roster-table td{
+    padding:12px 16px; border-bottom:1px solid var(--line); font-size:13.5px; vertical-align:middle;
+  }
+  .roster-table tr:last-child td{ border-bottom:none; }
+  .roster-table tr:hover td{ background:var(--panel-raised); }
+  .roster-table .rt-name{ font-weight:600; }
+  .roster-table .rt-rank{
+    display:inline-block; font-family:var(--font-mono); font-size:10.5px; letter-spacing:.5px;
+    text-transform:uppercase; padding:3px 9px; border:1px solid var(--amber); color:var(--amber);
+  }
+  .roster-table .rt-joined{ font-family:var(--font-mono); font-size:12px; color:var(--muted); }
+  .roster-table .rt-actions{ display:flex; gap:6px; justify-content:flex-end; }
+  .roster-table .rt-drag{ padding:12px 0 12px 14px; width:28px; }
+  .roster-table .rt-drag .drag-handle{
+    cursor:grab; color:var(--muted); font-size:14px; letter-spacing:1px; user-select:none;
+    line-height:1;
+  }
+  .roster-table tr.dragging{ opacity:.4; }
+  .roster-table tr.drag-over td{ border-top:2px solid var(--amber); }
+  .roster-spacer-row td{ padding:6px 16px; }
+  .roster-spacer-cell{ height:14px; }
+  .roster-empty{
+    padding:40px 16px; text-align:center; font-family:var(--font-mono); font-size:12.5px; color:var(--muted);
+  }
 
   /* ---------------- MODALS / POPOVERS ---------------- */
   .overlay{
@@ -524,6 +566,8 @@
     #legend{ display:none; }
     #adminPage .ap-head, #adminPage .ap-tabs, #adminPage .ap-body{ padding-left:16px; padding-right:16px; }
     .page-switch-btn{ padding:6px 10px; }
+    .roster-wrap{ padding:20px 12px 40px; }
+    .roster-table th, .roster-table td{ padding:10px 8px; font-size:12.5px; }
   }
 </style>
 </head>
@@ -561,6 +605,7 @@
     <div class="page-switch">
       <button class="page-switch-btn active" data-page="map" type="button">Map</button>
       <button class="page-switch-btn" data-page="forum" type="button">Forum</button>
+      <button class="page-switch-btn" data-page="roster" type="button">Roster</button>
     </div>
     <div class="right">
       <div class="who">
@@ -686,7 +731,51 @@
       </div>
     </div>
    </div>
+
+   <div id="rosterPage" class="app-page hidden">
+    <div class="roster-wrap">
+      <div class="roster-head">
+        <h2>Roster</h2>
+        <div class="roster-head-actions">
+          <button class="btn ghost hidden" id="addSpacerBtn" type="button">Add Spacer</button>
+          <button class="btn" id="addMemberBtn" type="button">Add Member</button>
+        </div>
+      </div>
+      <div class="roster-table-wrap">
+        <table class="roster-table">
+          <thead>
+            <tr><th class="rt-drag-col"></th><th>Name</th><th>Rank</th><th>Joined</th><th></th></tr>
+          </thead>
+          <tbody id="rosterBody"></tbody>
+        </table>
+      </div>
+    </div>
+   </div>
   </main>
+</div>
+
+<!-- ================= NEW / EDIT MEMBER MODAL ================= -->
+<div class="overlay" id="memberModalOverlay">
+  <div class="modal">
+    <button class="close-x" id="memberModalClose">&times;</button>
+    <h3 id="memberModalHeading">Add Member</h3>
+    <div class="field">
+      <label for="memberNameInput">Name</label>
+      <input id="memberNameInput" type="text" maxlength="40" placeholder="Member name">
+    </div>
+    <div class="field">
+      <label for="memberRankInput">Rank</label>
+      <input id="memberRankInput" type="text" maxlength="40" placeholder="e.g. Capo, Soldier, OG">
+    </div>
+    <div class="field">
+      <label for="memberJoinedInput">Date joined</label>
+      <input id="memberJoinedInput" type="date">
+    </div>
+    <div class="actions">
+      <button class="btn ghost" id="memberCancelBtn" type="button">Cancel</button>
+      <button class="btn" id="memberSaveBtn" type="button">Save</button>
+    </div>
+  </div>
 </div>
 
 <!-- ================= NEW PING MODAL ================= -->
@@ -805,7 +894,8 @@
      created_by text,
      created_at timestamptz not null default now(),
      last_name text,
-     last_login_at timestamptz
+     last_login_at timestamptz,
+     device_id text
    );
 
    create table pings (
@@ -846,11 +936,23 @@
      created_at timestamptz not null default now()
    );
 
+   create table roster_members (
+     id uuid primary key default gen_random_uuid(),
+     name text not null,
+     rank text not null,
+     joined_date date,
+     author_code text,
+     sort_order double precision,
+     is_spacer boolean not null default false,
+     created_at timestamptz not null default now()
+   );
+
    alter table codes enable row level security;
    alter table pings enable row level security;
    alter table categories enable row level security;
    alter table forum_threads enable row level security;
    alter table forum_replies enable row level security;
+   alter table roster_members enable row level security;
 
    -- anyone with the anon key can check/list codes and manage pings.
    -- the access-code gate itself is what keeps non-members out; see
@@ -876,11 +978,17 @@
    create policy "replies insertable" on forum_replies for insert with check (true);
    create policy "replies deletable" on forum_replies for delete using (true);
 
+   create policy "roster readable" on roster_members for select using (true);
+   create policy "roster insertable" on roster_members for insert with check (true);
+   create policy "roster updatable" on roster_members for update using (true);
+   create policy "roster deletable" on roster_members for delete using (true);
+
    alter publication supabase_realtime add table codes;
    alter publication supabase_realtime add table pings;
    alter publication supabase_realtime add table categories;
    alter publication supabase_realtime add table forum_threads;
    alter publication supabase_realtime add table forum_replies;
+   alter publication supabase_realtime add table roster_members;
 
    -- lets anyone with the anon key read and upload images in the
    -- "forum-images" bucket (create that bucket first — see step 3 above).
@@ -913,6 +1021,13 @@
    -- from earlier setup instructions — run it once even if everything
    -- else here looks familiar:
    alter publication supabase_realtime add table codes;
+
+   -- device-lock fix: codes now bind to a per-browser device token
+   -- instead of just a typed name (a name is easy to hand out by
+   -- accident — see the security note below). Existing claimed codes
+   -- will auto-bind to a device the next time their rightful owner
+   -- logs in with the matching name.
+   alter table codes add column if not exists device_id text;
 
    -- forum feature: run this whole block if you don't already have
    -- forum_threads / forum_replies tables.
@@ -950,6 +1065,30 @@
    alter table forum_threads add column if not exists images text[] not null default '{}';
    create policy "forum images readable" on storage.objects for select using (bucket_id = 'forum-images');
    create policy "forum images insertable" on storage.objects for insert with check (bucket_id = 'forum-images');
+
+   -- roster feature: run this whole block if you don't already have
+   -- a roster_members table.
+   create table if not exists roster_members (
+     id uuid primary key default gen_random_uuid(),
+     name text not null,
+     rank text not null,
+     joined_date date,
+     author_code text,
+     sort_order double precision,
+     is_spacer boolean not null default false,
+     created_at timestamptz not null default now()
+   );
+   alter table roster_members enable row level security;
+   create policy "roster readable" on roster_members for select using (true);
+   create policy "roster insertable" on roster_members for insert with check (true);
+   create policy "roster updatable" on roster_members for update using (true);
+   create policy "roster deletable" on roster_members for delete using (true);
+   alter publication supabase_realtime add table roster_members;
+
+   -- already had roster_members from before but not drag-reorder /
+   -- spacer support? just run these two lines:
+   alter table roster_members add column if not exists sort_order double precision;
+   alter table roster_members add column if not exists is_spacer boolean not null default false;
    ------------------------------------------------------------------- */
 
   const GANG_NAME     = "Los Rosados";
@@ -979,6 +1118,20 @@
   the Admin panel. For a public-facing or high-stakes deployment,
   put a real backend (e.g. a Supabase Edge Function checking a
   server-side secret) in front of these tables instead.
+
+  On device binding: a website has no access to a real hardware ID —
+  that's a browser-security boundary, not something this file can
+  work around. What it does instead is generate a random token the
+  first time someone logs in and store it in that browser's
+  localStorage, then bind the code to that token. It survives closing
+  the tab or restarting the browser, but clearing site data, using a
+  private/incognito window, or switching browsers all produce a new
+  token, which will look like "someone else" trying to use the code.
+  If that happens to a legitimate member, an admin can hit "Unclaim"
+  on their code in the Codes tab to let them back in from the new
+  device. This also means codes can't be "shared" between two people
+  on purpose anymore — it's one device per code, permanently, until
+  an admin unclaims it.
   ------------------------------------------------------------------ */
 
   // Categories now live in Supabase (see the "categories" table in the
@@ -1068,6 +1221,24 @@
   // ---------------------------------------------------------------
   let session = null; // { code, name, role }
 
+  // A random token stored in this browser, used to bind a code to "this
+  // device" rather than just to whatever name someone types (which the
+  // old error message was accidentally handing out — see verifyAndClaim
+  // below). This is the practical web equivalent of a hardware ID: real
+  // HWIDs aren't accessible to a website at all, so this is a persistent
+  // per-browser token instead. It survives reloads and browser restarts,
+  // but clearing site data, using a different browser, or incognito mode
+  // all produce a new one — an admin can always Unclaim a code to let the
+  // rightful owner back in from a new device if that happens.
+  function getDeviceId() {
+    let id = localStorage.getItem("ops_device_id");
+    if (!id) {
+      id = (crypto.randomUUID ? crypto.randomUUID() : "dev-" + Date.now() + "-" + Math.random().toString(36).slice(2));
+      localStorage.setItem("ops_device_id", id);
+    }
+    return id;
+  }
+
   function loadCachedSession() {
     try { return JSON.parse(localStorage.getItem("ops_session") || "null"); }
     catch { return null; }
@@ -1101,34 +1272,50 @@
       .subscribe();
   }
 
-  // Locks a code to whoever logs in with it first. The update below only
-  // succeeds if the code is still unclaimed (last_name is null), and
-  // Postgres serializes concurrent updates to the same row — so if two
-  // people race to claim the same code, only one update can win.
+  // Locks a code to whoever's DEVICE claims it first (not just a name —
+  // a name is trivial to guess if it's ever revealed to someone else,
+  // which is exactly the bug this replaces). The first atomic update
+  // below only succeeds if the code is still unclaimed, and Postgres
+  // serializes concurrent updates to the same row, so a claim race
+  // between two people can only be won by one of them.
   async function verifyAndClaim(name, code) {
     if (!supabaseReady) throw new Error("Server not configured.");
     const nowIso = new Date().toISOString();
+    const deviceId = getDeviceId();
 
     const { data: claimed, error: claimErr } = await db.from("codes")
-      .update({ last_name: name, last_login_at: nowIso })
+      .update({ last_name: name, last_login_at: nowIso, device_id: deviceId })
       .eq("code", code).eq("active", true).is("last_name", null)
       .select();
     if (claimErr) throw claimErr;
     if (claimed && claimed.length > 0) {
-      return { ok: true, role: claimed[0].role === "admin" ? "admin" : "member" };
+      return { ok: true, role: claimed[0].role === "admin" ? "admin" : "member", name };
     }
 
-    // Someone already claimed this code (or it's invalid/inactive) —
-    // figure out which, so the login screen can say something useful.
-    const { data: row, error: fetchErr } = await db.from("codes").select("active,role,last_name").eq("code", code).maybeSingle();
+    // Not a fresh claim — find out why: invalid code, already bound to
+    // this same device (a returning login), or someone else's device.
+    const { data: row, error: fetchErr } = await db.from("codes").select("active,role,last_name,device_id").eq("code", code).maybeSingle();
     if (fetchErr) throw fetchErr;
     if (!row || !row.active) return { ok: false, reason: "invalid" };
-    if (row.last_name && row.last_name.trim().toLowerCase() === name.trim().toLowerCase()) {
-      db.from("codes").update({ last_login_at: nowIso }).eq("code", code)
-        .then(({ error }) => { if (error) console.error("Couldn't record login:", error); });
-      return { ok: true, role: row.role === "admin" ? "admin" : "member" };
+
+    if (row.device_id) {
+      if (row.device_id === deviceId) {
+        db.from("codes").update({ last_login_at: nowIso }).eq("code", code)
+          .then(({ error }) => { if (error) console.error("Couldn't record login:", error); });
+        return { ok: true, role: row.role === "admin" ? "admin" : "member", name: row.last_name || name };
+      }
+      return { ok: false, reason: "claimed" };
     }
-    return { ok: false, reason: "claimed", claimedName: row.last_name };
+
+    // Claimed before device-binding existed on this code (an older
+    // claim) — bind it to this device now, but only for the person the
+    // name was already recorded under, so it can't be casually stolen.
+    if (row.last_name && row.last_name.trim().toLowerCase() === name.trim().toLowerCase()) {
+      db.from("codes").update({ device_id: deviceId, last_login_at: nowIso }).eq("code", code)
+        .then(({ error }) => { if (error) console.error("Couldn't bind device:", error); });
+      return { ok: true, role: row.role === "admin" ? "admin" : "member", name: row.last_name };
+    }
+    return { ok: false, reason: "claimed" };
   }
 
   async function attemptLogin(name, code, silent) {
@@ -1140,12 +1327,12 @@
       if (!result.ok) {
         if (!silent) {
           errEl.textContent = result.reason === "claimed"
-            ? `This code already belongs to "${result.claimedName}". Enter that name to log in, or ask an admin for your own code.`
+            ? "This code is already claimed on another device. Ask an admin for your own code."
             : "Invalid or deactivated code.";
         }
         return false;
       }
-      session = { code, name: trimmedName || "Unknown", role: result.role };
+      session = { code, name: result.name || trimmedName || "Unknown", role: result.role };
       saveSession(session);
       enterApp();
       return true;
@@ -1191,16 +1378,18 @@
     document.getElementById("adminBtn").classList.toggle("hidden", session.role !== "admin");
     initMapAndPings();
     initForum();
+    initRoster();
     watchOwnCode();
   }
 
   // ---------------------------------------------------------------
-  // Page switch (Map / Forum / Admin)
+  // Page switch (Map / Forum / Roster / Admin)
   // ---------------------------------------------------------------
   function showPage(name) {
     document.querySelectorAll(".page-switch-btn").forEach(b => b.classList.toggle("active", b.dataset.page === name));
     document.getElementById("mapPage").classList.toggle("hidden", name !== "map");
     document.getElementById("forumPage").classList.toggle("hidden", name !== "forum");
+    document.getElementById("rosterPage").classList.toggle("hidden", name !== "roster");
     document.getElementById("adminPage").classList.toggle("hidden", name !== "admin");
   }
 
@@ -1890,6 +2079,186 @@
   });
 
   // ---------------------------------------------------------------
+  // Roster
+  // ---------------------------------------------------------------
+  let rosterMembers = []; // [{id, name, rank, joinedDate, authorCode, sortOrder, isSpacer, createdAt}]
+  let editingMemberId = null;
+  let dragSrcId = null;
+
+  function normalizeMember(row) {
+    return { id: row.id, name: row.name, rank: row.rank, joinedDate: row.joined_date,
+      authorCode: row.author_code, sortOrder: row.sort_order, isSpacer: !!row.is_spacer,
+      createdAt: new Date(row.created_at).getTime() };
+  }
+
+  function formatJoinDate(dateStr) {
+    if (!dateStr) return "—";
+    const [y, m, d] = dateStr.split("-").map(Number);
+    if (!y || !m || !d) return dateStr;
+    const dt = new Date(y, m - 1, d);
+    return dt.toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" });
+  }
+
+  async function refetchRoster() {
+    const { data, error } = await db.from("roster_members").select("*")
+      .order("sort_order", { ascending: true, nullsFirst: false })
+      .order("created_at", { ascending: true });
+    if (error) { console.error("Couldn't load roster:", error); return; }
+    rosterMembers = data.map(normalizeMember);
+    renderRoster();
+  }
+
+  function initRoster() {
+    if (!supabaseReady) return;
+    refetchRoster();
+    db.channel("roster-changes")
+      .on("postgres_changes", { event: "*", schema: "public", table: "roster_members" }, () => refetchRoster())
+      .subscribe();
+  }
+
+  // Reordering is admin-only, and just renumbers sort_order sequentially
+  // for every row in the new order — simplest way to keep it correct
+  // even after spacers or deletions shuffle things around.
+  async function persistRosterOrder(orderedMembers) {
+    rosterMembers = orderedMembers; // optimistic update, realtime will reconfirm
+    renderRoster();
+    const results = await Promise.all(
+      orderedMembers.map((m, i) => db.from("roster_members").update({ sort_order: i }).eq("id", m.id))
+    );
+    if (results.some(r => r.error)) {
+      alert("Couldn't save the new roster order (check Supabase policies).");
+      refetchRoster();
+    }
+  }
+
+  function attachDragHandlers(row, member) {
+    if (session.role !== "admin") return;
+    row.draggable = true;
+    row.addEventListener("dragstart", () => { dragSrcId = member.id; row.classList.add("dragging"); });
+    row.addEventListener("dragend", () => row.classList.remove("dragging"));
+    row.addEventListener("dragover", e => { e.preventDefault(); row.classList.add("drag-over"); });
+    row.addEventListener("dragleave", () => row.classList.remove("drag-over"));
+    row.addEventListener("drop", e => {
+      e.preventDefault();
+      row.classList.remove("drag-over");
+      if (!dragSrcId || dragSrcId === member.id) return;
+      const fromIndex = rosterMembers.findIndex(m => m.id === dragSrcId);
+      const toIndex = rosterMembers.findIndex(m => m.id === member.id);
+      if (fromIndex === -1 || toIndex === -1) return;
+      const reordered = [...rosterMembers];
+      const [moved] = reordered.splice(fromIndex, 1);
+      reordered.splice(toIndex, 0, moved);
+      dragSrcId = null;
+      persistRosterOrder(reordered);
+    });
+  }
+
+  function renderRoster() {
+    const isAdmin = session.role === "admin";
+    document.getElementById("addSpacerBtn").classList.toggle("hidden", !isAdmin);
+
+    const body = document.getElementById("rosterBody");
+    if (rosterMembers.length === 0) {
+      body.innerHTML = `<tr><td colspan="5"><div class="roster-empty">No members added yet.</div></td></tr>`;
+      return;
+    }
+    body.innerHTML = "";
+    rosterMembers.forEach(m => {
+      const row = document.createElement("tr");
+      const dragHandle = isAdmin ? `<span class="drag-handle" title="Drag to reorder">⋮⋮</span>` : "";
+
+      if (m.isSpacer) {
+        row.className = "roster-spacer-row";
+        row.innerHTML = `
+          <td class="rt-drag">${dragHandle}</td>
+          <td colspan="3" class="roster-spacer-cell"></td>
+          <td>
+            <div class="rt-actions">
+              ${isAdmin ? `<button class="btn ghost small del-member-btn">Remove</button>` : ""}
+            </div>
+          </td>`;
+        if (isAdmin) {
+          row.querySelector(".del-member-btn").addEventListener("click", async () => {
+            const { error } = await db.from("roster_members").delete().eq("id", m.id);
+            if (error) alert("Couldn't remove this spacer.");
+          });
+        }
+        attachDragHandlers(row, m);
+        body.appendChild(row);
+        return;
+      }
+
+      const canManage = isAdmin || (m.authorCode ? m.authorCode === session.code : false);
+      row.innerHTML = `
+        <td class="rt-drag">${dragHandle}</td>
+        <td class="rt-name">${escapeHtml(m.name)}</td>
+        <td><span class="rt-rank">${escapeHtml(m.rank)}</span></td>
+        <td class="rt-joined">${formatJoinDate(m.joinedDate)}</td>
+        <td>
+          <div class="rt-actions">
+            ${canManage ? `<button class="btn ghost small edit-member-btn">Edit</button><button class="btn danger small del-member-btn">Delete</button>` : ""}
+          </div>
+        </td>`;
+      if (canManage) {
+        row.querySelector(".edit-member-btn").addEventListener("click", () => openMemberModal(m));
+        row.querySelector(".del-member-btn").addEventListener("click", async () => {
+          if (!confirm(`Remove "${m.name}" from the roster?`)) return;
+          const { error } = await db.from("roster_members").delete().eq("id", m.id);
+          if (error) alert("Couldn't remove this member.");
+        });
+      }
+      attachDragHandlers(row, m);
+      body.appendChild(row);
+    });
+  }
+
+  function nextSortOrder() {
+    return rosterMembers.length
+      ? Math.max(...rosterMembers.map(m => (typeof m.sortOrder === "number" ? m.sortOrder : 0))) + 1
+      : 0;
+  }
+
+  document.getElementById("addSpacerBtn").addEventListener("click", async () => {
+    const { error } = await db.from("roster_members").insert({
+      name: "", rank: "", is_spacer: true, sort_order: nextSortOrder(), author_code: session.code
+    });
+    if (error) alert("Couldn't add a spacer (check your Supabase setup — see the SETUP comment for the roster migration).");
+  });
+
+  function openMemberModal(member) {
+    editingMemberId = member ? member.id : null;
+    document.getElementById("memberModalHeading").textContent = member ? "Edit Member" : "Add Member";
+    document.getElementById("memberSaveBtn").textContent = member ? "Save Changes" : "Add Member";
+    document.getElementById("memberNameInput").value = member ? member.name : "";
+    document.getElementById("memberRankInput").value = member ? member.rank : "";
+    document.getElementById("memberJoinedInput").value = member ? (member.joinedDate || "") : "";
+    document.getElementById("memberModalOverlay").classList.add("active");
+    setTimeout(() => document.getElementById("memberNameInput").focus(), 30);
+  }
+  function closeMemberModal() { document.getElementById("memberModalOverlay").classList.remove("active"); }
+
+  document.getElementById("addMemberBtn").addEventListener("click", () => openMemberModal(null));
+  document.getElementById("memberModalClose").addEventListener("click", closeMemberModal);
+  document.getElementById("memberCancelBtn").addEventListener("click", closeMemberModal);
+
+  document.getElementById("memberSaveBtn").addEventListener("click", async () => {
+    const name = document.getElementById("memberNameInput").value.trim();
+    const rank = document.getElementById("memberRankInput").value.trim();
+    const joined = document.getElementById("memberJoinedInput").value || null;
+    if (!name || !rank) return;
+    if (editingMemberId) {
+      const { error } = await db.from("roster_members").update({ name, rank, joined_date: joined }).eq("id", editingMemberId);
+      if (error) { alert("Couldn't save changes to this member."); return; }
+    } else {
+      const { error } = await db.from("roster_members").insert({
+        name, rank, joined_date: joined, author_code: session.code, sort_order: nextSortOrder()
+      });
+      if (error) { alert("Couldn't add that member. Check your Supabase setup / connection."); return; }
+    }
+    closeMemberModal();
+  });
+
+  // ---------------------------------------------------------------
   // Admin page
   // ---------------------------------------------------------------
   document.getElementById("adminBtn").addEventListener("click", () => {
@@ -1949,7 +2318,9 @@
     data.forEach(d => {
       const row = document.createElement("div");
       row.className = "code-row" + (d.active ? "" : " inactive");
-      const claimText = d.last_name ? `claimed by ${escapeHtml(d.last_name)}` : "unclaimed";
+      const claimText = d.last_name
+        ? `claimed by ${escapeHtml(d.last_name)}${d.device_id ? "" : " (not device-bound yet)"}`
+        : "unclaimed";
       row.innerHTML = `
         <div>
           <div class="cr-code">${d.code}</div>
@@ -1967,7 +2338,7 @@
             ? `This is the code you're currently logged in with. Unclaiming it frees it up for someone else to use — you'd need a different code to log back in later. Unclaim "${d.code}" anyway?`
             : `Free up code "${d.code}" from "${d.last_name}" so it can be claimed by someone new? ${d.last_name} will be logged out immediately.`;
           if (!confirm(warning)) return;
-          const { error: unclaimErr } = await db.from("codes").update({ last_name: null, last_login_at: null }).eq("code", d.code);
+          const { error: unclaimErr } = await db.from("codes").update({ last_name: null, last_login_at: null, device_id: null }).eq("code", d.code);
           if (unclaimErr) { alert("Couldn't unclaim this code (check Supabase policies)."); return; }
           loadCodes();
         });
